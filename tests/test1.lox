@@ -1,0 +1,12 @@
+// prints "Nice!"
+
+var x = 5
+var MyVariable = 4.0
+"I can put a string here..." + " and it will be okay!"
+var calculate_20 = x * MyVariable // a comment with random characters "2^&@']!
+
+if (calculate_20 == 20 and true or false) {
+  print "Nice!"
+} else {
+  707
+}

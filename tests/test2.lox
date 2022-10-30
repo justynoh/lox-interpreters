@@ -1,0 +1,10 @@
+// fail to scan
+
+var hi = "hello!"
+// "this should not fail
+
+fun myfunc() {
+  return "this string should run to eof...
+}
+
+var pi = 3.141
