@@ -43,6 +43,9 @@ data Token =
   | True 
   | Var
   | While 
-  -- EOF
-  | EOF
   deriving Show
+
+-- LabelledToken = (<token>,  <lexeme>, <line>)
+type LabelledToken = (Token, String, Int)
+
+type LabelledTokens = [LabelledToken]

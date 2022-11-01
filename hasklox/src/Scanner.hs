@@ -2,98 +2,100 @@ module Scanner where
 
 import Data.Char (isDigit, isAlpha, isAlphaNum)
 import Text.Read (readMaybe)
+import qualified Utils.Error as E
 import qualified Types.Token as T
 
--- Scanner = (<i>, <line>, <program[i:]>)
-type Scanner = (Int, Int, String)
+-- Scanner = (<line>, <program[i:]>)
+type Scanner = (Int, String)
 
--- ScannedToken_ = Token <token> | Error <msg>
-data ScannedToken_ = Token T.Token | Error String deriving Show               
--- ScannedToken = (<token>,  <lexeme>, <line>)
-type ScannedToken = (ScannedToken_, String, Int)
+-- TryToken = Token <token> | Error <msg>
+data TryToken = Token T.Token | Error String deriving Show
+-- LabelledTryToken = (<trytoken>,  <lexeme>, <line>)
+type LabelledTryToken = (TryToken, String, Int)
+type LabelledTryTokens = [LabelledTryToken]
 
-scanTokens :: String -> [ScannedToken]
-scanTokens program = scanTokens' (0, 1, program)
+scan :: String -> (T.LabelledTokens, [String])
+scan program = filterTokens (scanTokens (1, program))
 
-scanTokens' :: Scanner -> [ScannedToken]
-scanTokens' scanner = 
+scanTokens :: Scanner -> LabelledTryTokens
+scanTokens scanner = 
   let (t, scanner') = scanToken scanner
-      ts = maybe [] scanTokens' scanner'
+      ts = maybe [] scanTokens scanner'
   in 
     maybe ts (:ts) t
 
-scanToken :: Scanner -> (Maybe ScannedToken, Maybe Scanner)
-scanToken scanner@(i, line, program) =
+scanToken :: Scanner -> (Maybe LabelledTryToken, Maybe Scanner)
+scanToken scanner@(line, program) =
   -- Helper functions to make the big case less clunky
-  let advanceZero :: String -> (Maybe ScannedToken, Maybe Scanner)
-      advanceZero cs = (Nothing, Just (i + 1, line, cs))
-      advanceOne :: T.Token -> Char -> String -> (Maybe ScannedToken, Maybe Scanner)
-      advanceOne t c cs = (Just (Token t, [c], line), Just (i + 1, line, cs)) 
-      advanceTwo :: T.Token -> Char -> Char -> String -> (Maybe ScannedToken, Maybe Scanner)
-      advanceTwo t c1 c2 cs = (Just (Token t, [c1,c2], line), Just (i + 2, line, cs))
+  let 
+    advance0 :: String -> (Maybe LabelledTryToken, Maybe Scanner)
+    advance0 cs = (Nothing, Just (line, cs))
+    advance :: T.Token -> String -> String -> (Maybe LabelledTryToken, Maybe Scanner)
+    advance t lx cs = (Just (Token t, lx, line), Just (line, cs)) 
   in 
     case program of
-      [] -> (Just (Token T.EOF, [], line), Nothing)
+      [] -> (Nothing, Nothing)
       c:cs -> 
         case c of 
-          '(' -> advanceOne T.LeftParen c cs
-          ')' -> advanceOne T.RightParen c cs
-          '{' -> advanceOne T.LeftBrace c cs 
-          '}' -> advanceOne T.RightBrace c cs 
-          ',' -> advanceOne T.Comma c cs 
-          '.' -> advanceOne T.Dot c cs 
-          ';' -> advanceOne T.Semicolon c cs 
-          '+' -> advanceOne T.Plus c cs 
-          '-' -> advanceOne T.Minus c cs 
-          '*' -> advanceOne T.Star c cs
+          '(' -> advance T.LeftParen [c] cs
+          ')' -> advance T.RightParen [c] cs
+          '{' -> advance T.LeftBrace [c] cs 
+          '}' -> advance T.RightBrace [c] cs 
+          ',' -> advance T.Comma [c] cs 
+          '.' -> advance T.Dot [c] cs 
+          ';' -> advance T.Semicolon [c] cs 
+          '+' -> advance T.Plus [c] cs 
+          '-' -> advance T.Minus [c] cs 
+          '*' -> advance T.Star [c] cs
           '/' -> 
             case cs of 
               -- If it's a comment, need to consume till EOL
               '/':cs' -> 
                 let len = length (takeWhile (/='\n') program)
-                in (Nothing, Just (i + len, line, drop len program))
-              _ -> advanceOne T.Slash c cs
+                in (Nothing, Just (line, drop len program))
+              _ -> advance T.Slash [c] cs
           '!' -> 
             case cs of 
-              '=':cs' -> advanceTwo T.BangEqual c '=' cs'
-              _ -> advanceOne T.Bang c cs
+              '=':cs' -> advance T.BangEqual [c,'='] cs'
+              _ -> advance T.Bang [c] cs
           '=' -> 
             case cs of 
-              '=':cs' -> advanceTwo T.EqualEqual c '=' cs'
-              _ -> advanceOne T.Equal c cs
+              '=':cs' -> advance T.EqualEqual [c,'='] cs'
+              _ -> advance T.Equal [c] cs
           '>' ->
             case cs of 
-              '=':cs' -> advanceTwo T.GreaterEqual c '=' cs'
-              _ -> advanceOne T.Greater c cs
+              '=':cs' -> advance T.GreaterEqual [c,'='] cs'
+              _ -> advance T.Greater [c] cs
           '<' -> 
             case cs of 
-              '=':cs' -> advanceTwo T.LessEqual c '=' cs'
-              _ -> advanceOne T.Less c cs
+              '=':cs' -> advance T.LessEqual [c,'='] cs'
+              _ -> advance T.Less [c] cs
                   -- Can't use advanceZero because we need to increment line
-          '\n' -> (Nothing, Just (i + 1, line + 1, cs)) 
-          ' ' -> advanceZero cs
-          '\r' -> advanceZero cs
-          '\t' -> advanceZero cs
-          '"' -> scanString [] (i + 1, line, cs)
+          '\n' -> (Nothing, Just (line + 1, cs)) 
+          ' ' -> advance0 cs
+          '\r' -> advance0 cs
+          '\t' -> advance0 cs
+          '"' -> scanString [] (line, cs)
           _ -> 
             if isDigit c then scanNumber False [] scanner else 
             if isAlpha c || c == '_' then scanIdentOrKeyword [] scanner else
-            (Just (Error "Unknown token.", [c], line), Just (i + 1, line, cs))
+            (Just (Error "Unknown token.", [c], line), Just (line, cs))
 
-scanString :: String -> Scanner -> (Maybe ScannedToken, Maybe Scanner)
-scanString s scanner@(i, line, program) =
+scanString :: String -> Scanner -> (Maybe LabelledTryToken, Maybe Scanner)
+scanString s scanner@(line, program) =
   case program of 
     [] -> (Just (Error "EOF while scanning string literal.", reverse s, line), Just scanner)
-    '"':cs -> (Just (Token (T.String (reverse s)), '"':reverse ('"':s), line), Just (i+1, line, cs))
-    c:cs -> scanString (c:s) (i+1, line + (if c == '\n' then 1 else 0), cs)
+    '"':cs -> (Just (Token (T.String (reverse s)), '"':reverse ('"':s), line), Just (line, cs))
+    c:cs -> scanString (c:s) (line + (if c == '\n' then 1 else 0), cs)
 
-scanNumber :: Bool -> String -> Scanner -> (Maybe ScannedToken, Maybe Scanner)
-scanNumber isFrac s scanner@(i, line, program) = 
-  let parseNumber :: () -> (Maybe ScannedToken, Maybe Scanner)
-      parseNumber () = 
-        let s' = reverse s
-            d = readMaybe s' :: Maybe Double
-        in (Just (maybe (Error "Error while parsing number.") (Token . T.Number) d, s', line), Just scanner)
+scanNumber :: Bool -> String -> Scanner -> (Maybe LabelledTryToken, Maybe Scanner)
+scanNumber isFrac s scanner@(line, program) = 
+  let 
+    parseNumber :: () -> (Maybe LabelledTryToken, Maybe Scanner)
+    parseNumber () = 
+      let s' = reverse s
+          d = readMaybe s' :: Maybe Double
+      in (Just (maybe (Error "Error while parsing number.") (Token . T.Number) d, s', line), Just scanner)
   in
     case program of 
       [] -> 
@@ -101,26 +103,28 @@ scanNumber isFrac s scanner@(i, line, program) =
       c:cs -> 
         if not isFrac && c == '.' && not (null cs) && isDigit (head cs) then
           -- If not already in fraction mode and we have '.x' where x is a digit, then switch into fraction mode.
-          scanNumber True (c:s) (i + 1, line, cs) 
+          scanNumber True (c:s) (line, cs) 
         else
           if isDigit c then
             -- Not in fraction mode, and we don't see a '.'.
-            scanNumber isFrac (c:s) (i + 1, line, cs)
+            scanNumber isFrac (c:s) (line, cs)
           else
             -- Once we stop reading digits and '.'s, do the parse.
             parseNumber ()
 
-scanIdentOrKeyword :: String -> Scanner -> (Maybe ScannedToken, Maybe Scanner)
-scanIdentOrKeyword s scanner@(i, line, program) =
-  let parseIdentOrKeyword () = 
-        let s' = reverse s
-        in (Just (Token (keywordMap s'), s', line), Just scanner) 
+scanIdentOrKeyword :: String -> Scanner -> (Maybe LabelledTryToken, Maybe Scanner)
+scanIdentOrKeyword s scanner@(line, program) =
+  let 
+    parseIdentOrKeyword :: () -> (Maybe LabelledTryToken, Maybe Scanner)
+    parseIdentOrKeyword () = 
+      let s' = reverse s
+      in (Just (Token (keywordMap s'), s', line), Just scanner) 
   in 
     case program of 
       [] -> if null s then error "Compiler error." else parseIdentOrKeyword ()
       c:cs ->
         if isAlphaNum c || c == '_' then 
-          scanIdentOrKeyword (c:s) (i+1, line, cs) 
+          scanIdentOrKeyword (c:s) (line, cs) 
         else parseIdentOrKeyword ()
 
 keywordMap :: String -> T.Token
@@ -143,4 +147,13 @@ keywordMap s =
     "var" -> T.Var
     "while" -> T.While
     _ -> T.Identifier s
-    
+
+filterTokens :: LabelledTryTokens -> (T.LabelledTokens, [String])
+filterTokens [] = ([], [])
+filterTokens ((trytoken, lexeme, line):ts) =
+  let (toks, errs) = filterTokens ts
+  in
+    case trytoken of 
+      Token token -> ((token, lexeme, line):toks, errs)
+      Error msg -> (toks, E.error (E.ScanError msg lexeme line):errs)
+
