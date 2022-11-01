@@ -43,6 +43,11 @@ data Binexp1 =
   | Binexp1Leaf Binexp2
   deriving Show
 
+data Ternexp =
+    TernexpNode Binexp1 Ternexp Ternexp
+  | TernexpLeaf Binexp1
+  deriving Show
+
 data Exp = 
-  Binexp Binexp1
+  Exp Ternexp
   deriving Show

@@ -9,7 +9,7 @@ import qualified Types.Token as T
 type Scanner = (Int, String)
 
 -- TryToken = Token <token> | Error <msg>
-data TryToken = Token T.Token | Error String deriving Show
+data TryToken = Token T.Token | Error String
 -- LabelledTryToken = (<trytoken>,  <lexeme>, <line>)
 type LabelledTryToken = (TryToken, String, Int)
 type LabelledTryTokens = [LabelledTryToken]
@@ -47,6 +47,8 @@ scanToken scanner@(line, program) =
           '+' -> advance T.Plus [c] cs 
           '-' -> advance T.Minus [c] cs 
           '*' -> advance T.Star [c] cs
+          '?' -> advance T.Question [c] cs
+          ':' -> advance T.Colon [c] cs
           '/' -> 
             case cs of 
               -- If it's a comment, need to consume till EOL

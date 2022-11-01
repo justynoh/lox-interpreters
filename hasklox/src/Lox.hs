@@ -3,6 +3,7 @@ module Lox where
 import qualified Utils.Error as E
 import qualified Scanner
 import qualified Parser
+import qualified Interpreter
 
 quitIf :: Bool -> Int -> IO Int -> IO Int
 quitIf b n cont = if b then return n else cont
@@ -14,7 +15,8 @@ run program = do
     -- Print errors, if any.
   foldl (\_ err -> putStrLn err) (return ()) errs
   (parsed, _) <- return (Parser.parse labelledTokens)
-  print parsed
+  out <- return (Interpreter.evaluate parsed)
+  print out
   return 0
 
   

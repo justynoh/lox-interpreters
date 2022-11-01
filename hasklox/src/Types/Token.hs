@@ -22,6 +22,8 @@ data Token =
   | GreaterEqual
   | Less
   | LessEqual
+  | Question
+  | Colon
   -- Literals
   | Identifier String
   | String String
@@ -43,7 +45,6 @@ data Token =
   | True 
   | Var
   | While 
-  deriving Show
 
 -- LabelledToken = (<token>,  <lexeme>, <line>)
 type LabelledToken = (Token, String, Int)

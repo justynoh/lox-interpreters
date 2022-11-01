@@ -2,7 +2,7 @@ module Parser where
 
 import qualified Types.Token as T
 import qualified Types.Ast as A
-import Control.Exception (throw, Exception, try, catch)
+import Control.Exception (throw, Exception)
 
 data ParseException =
   ExceptionExp String
@@ -15,8 +15,23 @@ parse = parseExp
 
 parseExp :: T.LabelledTokens -> (A.Exp, T.LabelledTokens)
 parseExp toks = 
-  let (e, toks') = parseBinexp1 toks
-  in (A.Binexp e, toks')
+  let (e, toks') = parseTernexp toks
+  in (A.Exp e, toks')
+
+parseTernexp :: T.LabelledTokens -> (A.Ternexp, T.LabelledTokens)
+parseTernexp toks = 
+  let (e0, toks') = parseBinexp1 toks in
+  case toks' of
+    (T.Question,_,_):ts -> parseTernexp' e0 ts
+    _ -> (A.TernexpLeaf e0, toks')
+  
+
+parseTernexp' :: A.Binexp1 -> T.LabelledTokens -> (A.Ternexp, T.LabelledTokens)
+parseTernexp' e0 toks = 
+  let (e1, toks') = parseTernexp toks in
+  case toks' of
+    (T.Colon, _, _):ts -> let (e2, toks'') = parseTernexp ts in (A.TernexpNode e0 e1 e2, toks'')
+    _ -> throw (ExceptionExp "Missing ':' after '?'.")
 
 parseBinexp1 :: T.LabelledTokens -> (A.Binexp1, T.LabelledTokens)
 parseBinexp1 = parseBinexp1' Nothing
