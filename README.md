@@ -2,7 +2,6 @@
 Interpreters for Lox, following https://craftinginterpreters.com.
 
 Literals and identifiers
-
 ```
 <number>  :=   <digits> | <digits>.<digits>
 <digits>  :=   <digit><digits>
@@ -30,6 +29,12 @@ Expression language
 <binop3>   :=   + | -
 <binop4>   :=   * | /
 <unop>     :=   - | !
+```
+
+Statement language
+```
+<program>  :=   EOF | <stmt> <program>
+<stmt>     :=   <exp>; | print <exp>;
 ```
 
 ## hasklox
