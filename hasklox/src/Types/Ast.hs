@@ -1,4 +1,9 @@
+{-# LANGUAGE DeriveGeneric #-}
+
 module Types.Ast where 
+
+import Control.DeepSeq (NFData)
+import GHC.Generics (Generic)
 
 data Unop = Neg | Not deriving Show
 data Binop4 = Times | Divide deriving Show
@@ -11,7 +16,10 @@ data Lit =
   | String String 
   | Boolean Bool
   | Nil
-  deriving Show
+  deriving (Show, Generic)
+
+-- Needed in order to force evaluation of expression statements.
+instance NFData Lit
 
 data Prim = 
     Literal Lit
@@ -48,6 +56,8 @@ data Ternexp =
   | TernexpLeaf Binexp1
   deriving Show
 
-data Exp = 
-  Exp Ternexp
-  deriving Show
+newtype Exp = Exp Ternexp deriving Show
+
+data Stmt = ExpStmt Exp | PrintStmt Exp deriving Show
+
+type Prog = [Stmt]

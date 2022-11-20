@@ -21,8 +21,7 @@ scanTokens :: Scanner -> LabelledTryTokens
 scanTokens scanner = 
   let (t, scanner') = scanToken scanner
       ts = maybe [] scanTokens scanner'
-  in 
-    maybe ts (:ts) t
+  in maybe ts (:ts) t
 
 scanToken :: Scanner -> (Maybe LabelledTryToken, Maybe Scanner)
 scanToken scanner@(line, program) =
@@ -72,23 +71,25 @@ scanToken scanner@(line, program) =
             case cs of 
               '=':cs' -> advance T.LessEqual [c,'='] cs'
               _ -> advance T.Less [c] cs
-                  -- Can't use advanceZero because we need to increment line
-          '\n' -> (Nothing, Just (line + 1, cs)) 
+          '\n' -> (Nothing, Just (line + 1, cs)) -- Can't use advanceZero because we need to increment line
           ' ' -> advance0 cs
           '\r' -> advance0 cs
           '\t' -> advance0 cs
-          '"' -> scanString [] (line, cs)
+          '"' -> scanString c [] (line, cs)
+          '\'' -> scanString c [] (line, cs)
           _ -> 
             if isDigit c then scanNumber False [] scanner else 
             if isAlpha c || c == '_' then scanIdentOrKeyword [] scanner else
             (Just (Error "Unknown token.", [c], line), Just (line, cs))
 
-scanString :: String -> Scanner -> (Maybe LabelledTryToken, Maybe Scanner)
-scanString s scanner@(line, program) =
+scanString :: Char -> String -> Scanner -> (Maybe LabelledTryToken, Maybe Scanner)
+scanString delimiter s scanner@(line, program) =
   case program of 
     [] -> (Just (Error "EOF while scanning string literal.", reverse s, line), Just scanner)
-    '"':cs -> (Just (Token (T.String (reverse s)), '"':reverse ('"':s), line), Just (line, cs))
-    c:cs -> scanString (c:s) (line + (if c == '\n' then 1 else 0), cs)
+    c:cs -> 
+      if c == delimiter 
+      then (Just (Token (T.String (reverse s)), delimiter:reverse (delimiter:s), line), Just (line, cs)) 
+      else scanString delimiter (c:s) (line + (if c == '\n' then 1 else 0), cs)
 
 scanNumber :: Bool -> String -> Scanner -> (Maybe LabelledTryToken, Maybe Scanner)
 scanNumber isFrac s scanner@(line, program) = 
@@ -157,5 +158,5 @@ filterTokens ((trytoken, lexeme, line):ts) =
   in
     case trytoken of 
       Token token -> ((token, lexeme, line):toks, errs)
-      Error msg -> (toks, E.error (E.ScanError msg lexeme line):errs)
+      Error msg -> (toks, E.toString (E.ScanError msg lexeme line):errs)
 

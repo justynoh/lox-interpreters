@@ -46,7 +46,7 @@ data Token =
   | Var
   | While 
 
--- LabelledToken = (<token>,  <lexeme>, <line>)
+-- LabelledToken = (<token>, <lexeme>, <line>)
 type LabelledToken = (Token, String, Int)
 
 type LabelledTokens = [LabelledToken]

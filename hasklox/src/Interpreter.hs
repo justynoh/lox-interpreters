@@ -1,16 +1,29 @@
 module Interpreter where
 
 import Types.Ast as A  
-import Control.Exception (throw, Exception)
+import Utils.Error (Error(RuntimeError), throw)
+import Control.DeepSeq (force)
+import Control.Exception (evaluate)
 
-data InterpretException =
-  RuntimeError String
-  deriving Show
+interpret :: A.Prog -> IO Int
+interpret = interpretProg
 
-instance Exception InterpretException
+interpretProg :: A.Prog -> IO Int
+interpretProg p = 
+  case p of 
+    [] -> return 0
+    s:ss -> do interpretStmt s; interpret ss
 
-evaluate :: A.Exp -> A.Lit
-evaluate = evaluateExp
+interpretStmt :: A.Stmt -> IO ()
+interpretStmt s = 
+  case s of
+    A.PrintStmt e -> putStrLn $ 
+      case evaluateExp e of 
+        Nil -> "nil"
+        Boolean b -> if b then "true" else "false"
+        Number n -> show n
+        String s -> s
+    A.ExpStmt e -> do evaluate (force (evaluateExp e)); return ()
 
 evaluateExp :: A.Exp -> A.Lit
 evaluateExp (A.Exp e) = evaluateTernexp e
@@ -81,7 +94,8 @@ evaluateBinexp4 e =
       in 
         case op of 
           A.Times -> A.Number (n1 * n2)
-          A.Divide -> A.Number (n1 / n2)
+          A.Divide -> if n2 == 0 then throw (RuntimeError "Division by zero.") 
+                      else A.Number (n1 / n2)
     A.Binexp4Leaf e' -> evaluateUnexp e'
 
 evaluateUnexp :: A.Unexp -> A.Lit
