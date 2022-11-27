@@ -9,19 +9,29 @@ Literals and identifiers
 
 <string>  :=   "<chars>"
 <chars>   :=   <char><chars>
-<char>    :=   a | b | c | ...
+<char>    :=   a | b | ...
+
+<ident>   :=   <ifst> | <ifst><ichars>
+<ifst>    :=   a | b | ... | z | A | B | ... | Z
+<ichars>  :=   <ichar><ichars>
+<ichar>   :=   a | b | ... | z | A | B | ... | Z | 0 | 1 | ... | 9 | _
 ```
 
 Expression language
 ```
-<exp>      :=   <binexp1>
+<exp>      :=   <assnexp> | <ternexp>
+
+<assnexp>  :=   <lvalue> = <exp>
+
 <ternexp>  :=   <binexp1> ? <ternexp> : <ternexp> | <binexp1>
 <binexp1>  :=   <binexp1> <binop1> <binexp2> | <binexp2>
 <binexp2>  :=   <binexp2> <binop2> <binexp3> | <binexp3>
 <binexp3>  :=   <binexp3> <binop3> <binexp4> | <binexp4>
 <binexp4>  :=   <binexp4> <binop4> <unexp> | <unexp>
 <unexp>    :=   <unop> <unexp> | <primary>
-<prim>     :=   <lit> | (<exp>)
+
+<lvalue>   :=   <ident>
+<prim>     :=   <lit> | (<exp>) | <ident>
 <lit>      :=   <number> | <string> | true | false | nil
 
 <binop1>   :=   == | !=
@@ -33,7 +43,8 @@ Expression language
 
 Statement language
 ```
-<program>  :=   EOF | <stmt> <program>
+<program>  :=   EOF | <blkstmt> <program>
+<blkstmt>  :=   var <lvalue>; | var <lvalue> = <exp>; | <stmt>
 <stmt>     :=   <exp>; | print <exp>;
 ```
 
