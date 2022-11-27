@@ -45,7 +45,10 @@ Statement language
 ```
 <program>  :=   EOF | <blkstmt> <program>
 <blkstmt>  :=   var <lvalue>; | var <lvalue> = <exp>; | <stmt>
-<stmt>     :=   <exp>; | print <exp>;
+<stmt>     :=   <exp>; | print <exp>; | <block>
+
+<block>    :=   { <blkstmts> }
+<blkstmts> :=   _ | <blkstmt><blkstmts>
 ```
 
 ## hasklox

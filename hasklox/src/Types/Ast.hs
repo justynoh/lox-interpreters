@@ -59,10 +59,21 @@ data Ternexp =
   | TernexpLeaf Binexp1
   deriving Show
 
-data Exp = AssnExp Lvalue Exp | PureExp Ternexp deriving Show
+data Exp = 
+    AssnExp Lvalue Exp 
+  | PureExp Ternexp 
+  deriving Show
 
-data Stmt = ExpStmt Exp | PrintStmt Exp deriving Show
+data Stmt = 
+    PrintStmt Exp 
+  | Block [BlkStmt]
+  | ExpStmt Exp 
+  deriving Show
 
-data BlkStmt = Decl String | DeclAssn String Exp | Stmt Stmt deriving Show
+data BlkStmt = 
+    Decl String 
+  | DeclAssn String Exp 
+  | Stmt Stmt 
+  deriving Show
 
 type Prog = [BlkStmt]

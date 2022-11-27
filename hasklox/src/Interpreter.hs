@@ -6,22 +6,32 @@ import Control.DeepSeq (force)
 import Control.Exception (evaluate)
 import qualified Data.Map as M
 
-type Env = M.Map String A.Lit
+type Env = M.Map String (Maybe A.Lit)
 
-interpret :: A.Prog -> IO Int
-interpret = interpretProg M.empty
+emptyEnv :: Env
+emptyEnv = M.empty
 
-interpretProg :: Env -> A.Prog -> IO Int
+interpret :: Env -> A.Prog -> IO Env
+interpret = interpretProg
+
+interpretProg :: Env -> A.Prog -> IO Env
 interpretProg env p = 
   case p of 
-    [] -> return 0
+    [] -> return env
     s:ss -> do env' <- interpretBlkStmt env s; interpretProg env' ss
 
 interpretBlkStmt :: Env -> A.BlkStmt -> IO Env
 interpretBlkStmt env s =
   case s of 
-    A.Decl id -> return (M.insert id A.Nil env) -- If no assignment, we opt to initialize with nil.
-    A.DeclAssn id exp -> let (v, env') = evaluateExp env exp in return (M.insert id v env')
+    A.Decl id -> 
+      if M.member id env 
+      then throw (RuntimeError ("Variable " ++ id ++ " declared twice.")) 
+      else return (M.insert id Nothing env) -- If no assignment, we opt to initialize with nil.
+    A.DeclAssn id exp -> 
+      let (v, env') = evaluateExp env exp in 
+      if M.member id env 
+      then throw (RuntimeError ("Variable " ++ id ++ " declared twice.")) 
+      else return (M.insert id (Just v) env')
     A.Stmt stmt -> interpretStmt env stmt
 
 interpretStmt :: Env -> A.Stmt -> IO Env
@@ -36,7 +46,8 @@ interpretStmt env s =
           A.String s -> s
       return env'
     A.ExpStmt e -> do (_, env') <- evaluate (force (evaluateExp env e)); return env'
-
+    A.Block stmts -> do foldl (\e s -> e >>= (`interpretBlkStmt` s)) (return env) stmts; return env -- Ignore the env returned by interpretBlkStmt.
+ 
 evaluateExp :: Env -> A.Exp -> (A.Lit, Env)
 evaluateExp env e = 
   case e of 
@@ -45,13 +56,18 @@ evaluateExp env e =
       let (v, env') = evaluateExp env e'
       in (v, 
           case lval of 
-            A.IdentLvalue id -> if M.member id env' then M.insert id v env' else throw (RuntimeError ("Undefined variable '" ++ id ++ "'."))
+            A.IdentLvalue id -> 
+              if M.member id env'
+              then M.insert id (Just v) env'
+              else throw (RuntimeError ("Undefined variable '" ++ id ++ "'."))
           )
 
 evaluateTernexp :: Env -> A.Ternexp -> (A.Lit, Env)
 evaluateTernexp env e =
   case e of 
-    A.TernexpNode e0 e1 e2 -> let (v0 , env0) = evaluateBinexp1 env e0 in evaluateTernexp env0 (if isTruthy v0 then e1 else e2)
+    A.TernexpNode e0 e1 e2 -> 
+      let (v0 , env0) = evaluateBinexp1 env e0 in 
+      evaluateTernexp env0 (if isTruthy v0 then e1 else e2)
     A.TernexpLeaf e' -> evaluateBinexp1 env e'
 
 evaluateBinexp1 :: Env -> A.Binexp1 -> (A.Lit, Env)
@@ -138,7 +154,13 @@ evaluatePrim env p =
   case p of 
     A.LitPrim l -> (l, env)
     A.ExpPrim e -> evaluateExp env e
-    A.IdentPrim id -> (env M.! id, env)
+    A.IdentPrim id -> 
+      if M.member id env 
+      then (case env M.! id of 
+              Nothing -> throw (RuntimeError ("Using uninitialized variable '" ++ id ++ "'.")) 
+              Just v -> v
+            , env) 
+      else throw (RuntimeError ("Using undeclared variable '" ++ id ++ "'."))
 
 getNumber :: String -> A.Lit -> Double
 getNumber op lit =

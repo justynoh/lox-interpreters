@@ -39,12 +39,22 @@ parseStmt toks =
       case toks' of
         (T.Semicolon, _, _):ts' -> (A.PrintStmt e, ts')
         _ -> throw (ParseError "Expected ';' after print expression." line)
+    (T.LeftBrace, _, line):ts -> let (block, toks') = parseBlock ts in (A.Block block, toks')
     _ ->
       let (e, toks') = parseExp toks in
       case toks' of
         (T.Semicolon, _, _):ts' -> (A.ExpStmt e, ts')
         _ -> throw (ParseError "Expected ';' after expression statement." 0) -- TODO: Update line number later
 
+parseBlock :: T.LabelledTokens -> ([A.BlkStmt], T.LabelledTokens)
+parseBlock toks =
+  case toks of 
+    [] -> throw (ParseError "EOF while parsing block." 0)
+    (T.RightBrace, _, _):ts -> ([], ts)
+    _ -> 
+      let (s, toks') = parseBlkStmt toks
+          (b, toks'') = parseBlock toks'
+      in (s:b, toks'')
 
 parseExp :: T.LabelledTokens -> (A.Exp, T.LabelledTokens)
 parseExp toks = 

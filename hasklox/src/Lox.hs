@@ -1,22 +1,42 @@
 module Lox where
 
-import Utils.Error
+import qualified System.IO as IO
 
+import Utils.Error (catch)
 import qualified Scanner
 import qualified Parser
 import qualified Interpreter
 
+runPrompt :: () -> IO ()
+runPrompt () = 
+  let runPromptLoop :: Interpreter.Env -> IO ()
+      runPromptLoop env = do
+        putStr "> "
+        IO.hFlush IO.stdout
+        line <- IO.getLine
+        env' <- run env line
+        runPromptLoop env'
+  in runPromptLoop Interpreter.emptyEnv
+
+runFile :: String -> IO ()
+runFile path = do
+  contents <- readFile path
+  error <- run Interpreter.emptyEnv contents
+  return () -- hmmm...
+
 quitIf :: Bool -> Int -> IO Int -> IO Int
 quitIf b n cont = if b then return n else cont
 
-run :: String -> IO Int
-run program = do
+run :: Interpreter.Env -> String -> IO Interpreter.Env
+run env program = do
   -- Scanning
   (labelledTokens, errs) <- return (Scanner.scan program)
   -- Print errors, if any.
   foldl (\_ err -> putStrLn err) (return ()) errs
-  if not (null errs) then return 1 else do
+  if not (null errs) then return env else do
+    -- Parsing
     maybeParsed <- catch (return (Just (Parser.parse labelledTokens))) Nothing
     case maybeParsed of 
-      Nothing -> return 1
-      Just parsed -> catch (Interpreter.interpret parsed) 1
+      Nothing -> return env
+      -- Interpret
+      Just parsed -> catch (Interpreter.interpret env parsed) env
