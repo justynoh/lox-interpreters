@@ -11,6 +11,8 @@ data Binop3 = Plus | Minus deriving Show
 data Binop2 = Less | LessEqual | Greater  | GreaterEqual deriving Show
 data Binop1 = Equal | NotEqual deriving Show
 
+data Lvalue = IdentLvalue String deriving Show
+
 data Lit = 
     Number Double
   | String String 
@@ -22,8 +24,9 @@ data Lit =
 instance NFData Lit
 
 data Prim = 
-    Literal Lit
-  | Expression Exp
+    LitPrim Lit
+  | IdentPrim String
+  | ExpPrim Exp
   deriving Show
 
 data Unexp =
@@ -56,8 +59,10 @@ data Ternexp =
   | TernexpLeaf Binexp1
   deriving Show
 
-newtype Exp = Exp Ternexp deriving Show
+data Exp = AssnExp Lvalue Exp | PureExp Ternexp deriving Show
 
 data Stmt = ExpStmt Exp | PrintStmt Exp deriving Show
 
-type Prog = [Stmt]
+data BlkStmt = Decl String | DeclAssn String Exp | Stmt Stmt deriving Show
+
+type Prog = [BlkStmt]

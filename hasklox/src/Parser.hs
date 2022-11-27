@@ -11,7 +11,25 @@ parseProg :: T.LabelledTokens -> A.Prog
 parseProg toks = 
   case toks of 
     [] -> []
-    _ -> let (s, toks') = parseStmt toks in s : parseProg toks'
+    _ -> let (s, toks') = parseBlkStmt toks in s : parseProg toks'
+
+parseBlkStmt :: T.LabelledTokens -> (A.BlkStmt, T.LabelledTokens)
+parseBlkStmt toks =
+  case toks of 
+    (T.Var, _, line):ts -> 
+      case ts of
+        (T.Identifier ident, _, line'):ts' ->
+          case ts' of
+            (T.Semicolon, _, _):ts'' -> (A.Decl ident, ts'') -- Declare only
+            (T.Equal, _, line''):ts'' -> -- Declare and assign
+              let (exp, toks') = parseExp ts'' in
+              case toks' of 
+                (T.Semicolon, _, _):ts''' -> (A.DeclAssn ident exp, ts''')
+                _ -> throw (ParseError "Expected ';' after variable assignment." line'')
+            _ -> throw (ParseError "Expected ';' or '=' after variable declaration." line')
+        _ -> throw (ParseError "Expected identified after 'var'." line)
+    _ -> let (stmt, toks') = parseStmt toks in (A.Stmt stmt, toks')
+
 
 parseStmt :: T.LabelledTokens -> (A.Stmt, T.LabelledTokens)
 parseStmt toks =
@@ -31,7 +49,9 @@ parseStmt toks =
 parseExp :: T.LabelledTokens -> (A.Exp, T.LabelledTokens)
 parseExp toks = 
   let (e, toks') = parseTernexp toks in 
-  (A.Exp e, toks')
+  case toks' of 
+    (T.Equal, _, line):ts' -> let (e1, toks'') = parseExp ts' in (A.AssnExp (ternexpToLvalue e line) e1, toks'')
+    _ -> (A.PureExp e, toks')
 
 parseTernexp :: T.LabelledTokens -> (A.Ternexp, T.LabelledTokens)
 parseTernexp toks = 
@@ -121,20 +141,22 @@ parsePrim toks =
     [] -> throw (ParseError "EOF while parsing expression." 0)
     (t, _, line):ts ->
       case t of
-        T.False -> (A.Literal (A.Boolean False), ts)
-        T.True -> (A.Literal (A.Boolean True), ts)
-        T.Nil -> (A.Literal A.Nil, ts)
-        T.String s -> (A.Literal (A.String s), ts)
-        T.Number n -> (A.Literal (A.Number n), ts)
+        T.False -> (A.LitPrim (A.Boolean False), ts)
+        T.True -> (A.LitPrim (A.Boolean True), ts)
+        T.Nil -> (A.LitPrim A.Nil, ts)
+        T.String s -> (A.LitPrim (A.String s), ts)
+        T.Number n -> (A.LitPrim (A.Number n), ts)
+        T.Identifier id -> (A.IdentPrim id, ts)
         T.LeftParen -> 
           let 
             (e,toks') = parseExp ts
           in 
             case toks' of 
-              (T.RightParen,_,_):ts' -> (A.Expression e, ts')
+              (T.RightParen,_,_):ts' -> (A.ExpPrim e, ts')
               _ -> throw (ParseError "Expected ')' at end of parenthesized expression." line)
         _ -> throw (ParseError "Expected expression." line)
 
+-- Resync parsing so that the parser can go back to a position it thinks it knows what's going on.
 synchronize :: T.LabelledTokens -> T.LabelledTokens
 synchronize toks =
   case toks of 
@@ -151,3 +173,9 @@ synchronize toks =
         T.Print -> toks 
         T.Return -> toks
         _ -> synchronize ts
+
+ternexpToLvalue :: A.Ternexp -> Int -> A.Lvalue
+ternexpToLvalue e line = 
+  case e of
+    A.TernexpLeaf (A.Binexp1Leaf (A.Binexp2Leaf (A.Binexp3Leaf (A.Binexp4Leaf (A.UnexpLeaf (A.IdentPrim s)))))) -> A.IdentLvalue s
+    _ -> throw (ParseError "Invalid assignment target on left side of '='." line)

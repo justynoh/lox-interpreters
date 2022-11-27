@@ -1,116 +1,144 @@
 module Interpreter where
 
-import Types.Ast as A  
+import qualified Types.Ast as A  
 import Utils.Error (Error(RuntimeError), throw)
 import Control.DeepSeq (force)
 import Control.Exception (evaluate)
+import qualified Data.Map as M
+
+type Env = M.Map String A.Lit
 
 interpret :: A.Prog -> IO Int
-interpret = interpretProg
+interpret = interpretProg M.empty
 
-interpretProg :: A.Prog -> IO Int
-interpretProg p = 
+interpretProg :: Env -> A.Prog -> IO Int
+interpretProg env p = 
   case p of 
     [] -> return 0
-    s:ss -> do interpretStmt s; interpret ss
+    s:ss -> do env' <- interpretBlkStmt env s; interpretProg env' ss
 
-interpretStmt :: A.Stmt -> IO ()
-interpretStmt s = 
+interpretBlkStmt :: Env -> A.BlkStmt -> IO Env
+interpretBlkStmt env s =
+  case s of 
+    A.Decl id -> return (M.insert id A.Nil env) -- If no assignment, we opt to initialize with nil.
+    A.DeclAssn id exp -> let (v, env') = evaluateExp env exp in return (M.insert id v env')
+    A.Stmt stmt -> interpretStmt env stmt
+
+interpretStmt :: Env -> A.Stmt -> IO Env
+interpretStmt env s = 
   case s of
-    A.PrintStmt e -> putStrLn $ 
-      case evaluateExp e of 
-        Nil -> "nil"
-        Boolean b -> if b then "true" else "false"
-        Number n -> show n
-        String s -> s
-    A.ExpStmt e -> do evaluate (force (evaluateExp e)); return ()
+    A.PrintStmt e -> let (v, env') = evaluateExp env e in do  
+      putStrLn $ 
+        case v of 
+          A.Nil -> "nil"
+          A.Boolean b -> if b then "true" else "false"
+          A.Number n -> show n
+          A.String s -> s
+      return env'
+    A.ExpStmt e -> do (_, env') <- evaluate (force (evaluateExp env e)); return env'
 
-evaluateExp :: A.Exp -> A.Lit
-evaluateExp (A.Exp e) = evaluateTernexp e
-
-evaluateTernexp :: A.Ternexp -> A.Lit
-evaluateTernexp e =
+evaluateExp :: Env -> A.Exp -> (A.Lit, Env)
+evaluateExp env e = 
   case e of 
-    A.TernexpNode e0 e1 e2 -> if isTruthy (evaluateBinexp1 e0) then evaluateTernexp e1 else evaluateTernexp e2
-    A.TernexpLeaf e' -> evaluateBinexp1 e'
+    A.PureExp e' -> evaluateTernexp env e'
+    A.AssnExp lval e' -> 
+      let (v, env') = evaluateExp env e'
+      in (v, 
+          case lval of 
+            A.IdentLvalue id -> if M.member id env' then M.insert id v env' else throw (RuntimeError ("Undefined variable '" ++ id ++ "'."))
+          )
 
-evaluateBinexp1 :: A.Binexp1 -> A.Lit
-evaluateBinexp1 e =
+evaluateTernexp :: Env -> A.Ternexp -> (A.Lit, Env)
+evaluateTernexp env e =
+  case e of 
+    A.TernexpNode e0 e1 e2 -> let (v0 , env0) = evaluateBinexp1 env e0 in evaluateTernexp env0 (if isTruthy v0 then e1 else e2)
+    A.TernexpLeaf e' -> evaluateBinexp1 env e'
+
+evaluateBinexp1 :: Env -> A.Binexp1 -> (A.Lit, Env)
+evaluateBinexp1 env e =
   case e of
     A.Binexp1Node e1 op e2 -> 
       let 
-        lit1 = evaluateBinexp1 e1
-        lit2 = evaluateBinexp2 e2
-        eq = isEqual lit1 lit2
-      in 
-        case op of 
-          A.Equal -> A.Boolean eq
-          A.NotEqual -> A.Boolean (not eq)
-    A.Binexp1Leaf e' -> evaluateBinexp2 e'
+        (v1, env1) = evaluateBinexp1 env e1
+        (v2, env2) = evaluateBinexp2 env1 e2
+        eq = isEqual v1 v2
+      in (case op of 
+            A.Equal -> A.Boolean eq
+            A.NotEqual -> A.Boolean (not eq)
+          , env2)
+    A.Binexp1Leaf e' -> evaluateBinexp2 env e'
 
-evaluateBinexp2 :: A.Binexp2 -> A.Lit
-evaluateBinexp2 e =
+evaluateBinexp2 :: Env -> A.Binexp2 -> (A.Lit, Env)
+evaluateBinexp2 env e =
   case e of
     A.Binexp2Node e1 op e2 -> 
       let 
         opstr = case op of {A.Less -> "<"; A.LessEqual -> "<="; A.Greater -> ">"; A.GreaterEqual -> ">="}
-        n1 = getNumber opstr (evaluateBinexp2 e1)
-        n2 = getNumber opstr (evaluateBinexp3 e2)
-      in 
-        case op of 
-          A.Less -> A.Boolean (n1 < n2)
-          A.LessEqual -> A.Boolean (n1 <= n2)
-          A.Greater -> A.Boolean (n1 > n2)
-          A.GreaterEqual -> A.Boolean (n1 >= n2)
-    A.Binexp2Leaf e' -> evaluateBinexp3 e'
+        (v1, env1) = evaluateBinexp2 env e1
+        (v2, env2) = evaluateBinexp3 env1 e2
+        n1 = getNumber opstr v1
+        n2 = getNumber opstr v2
+      in (case op of 
+            A.Less -> A.Boolean (n1 < n2)
+            A.LessEqual -> A.Boolean (n1 <= n2)
+            A.Greater -> A.Boolean (n1 > n2)
+            A.GreaterEqual -> A.Boolean (n1 >= n2)
+          , env2)
+    A.Binexp2Leaf e' -> evaluateBinexp3 env e'
 
 
-evaluateBinexp3 :: A.Binexp3 -> A.Lit
-evaluateBinexp3 e =
+evaluateBinexp3 :: Env -> A.Binexp3 -> (A.Lit, Env)
+evaluateBinexp3 env e =
   case e of
     A.Binexp3Node e1 op e2 -> 
       let 
-        lit1 = evaluateBinexp3 e1
-        lit2 = evaluateBinexp4 e2
-      in 
-        case op of 
-          A.Plus -> 
-            case (lit1, lit2) of
-              (A.String s1, A.String s2) -> A.String (s1 ++ s2)
-              (A.Number n1, A.Number n2) -> A.Number (n1 + n2)
-              _ -> throw (RuntimeError "Operands of + must either both be numbers or both be strings.")
-          A.Minus -> A.Number (getNumber "-" lit1 - getNumber "-" lit2)
-    A.Binexp3Leaf e' -> evaluateBinexp4 e'
+        (v1, env1) = evaluateBinexp3 env e1
+        (v2, env2) = evaluateBinexp4 env1 e2
+      in (case op of 
+            A.Plus -> 
+              case (v1, v2) of
+                (A.String s1, A.String s2) -> A.String (s1 ++ s2)
+                (A.Number n1, A.Number n2) -> A.Number (n1 + n2)
+                _ -> throw (RuntimeError "Operands of + must either both be numbers or both be strings.")
+            A.Minus -> A.Number (getNumber "-" v1 - getNumber "-" v2)
+          , env2)
+    A.Binexp3Leaf e' -> evaluateBinexp4 env e'
 
 
-evaluateBinexp4 :: A.Binexp4 -> A.Lit
-evaluateBinexp4 e =
+evaluateBinexp4 :: Env -> A.Binexp4 -> (A.Lit, Env)
+evaluateBinexp4 env e =
   case e of
     A.Binexp4Node e1 op e2 -> 
       let 
         opstr = case op of {A.Times -> "*"; A.Divide -> "/"}
-        n1 = getNumber opstr (evaluateBinexp4 e1)
-        n2 = getNumber opstr (evaluateUnexp e2)
-      in 
-        case op of 
-          A.Times -> A.Number (n1 * n2)
-          A.Divide -> if n2 == 0 then throw (RuntimeError "Division by zero.") 
-                      else A.Number (n1 / n2)
-    A.Binexp4Leaf e' -> evaluateUnexp e'
+        (v1, env1) = evaluateBinexp4 env e1
+        (v2, env2) = evaluateUnexp env1 e2
+        n1 = getNumber opstr v1
+        n2 = getNumber opstr v2
+      in (case op of 
+            A.Times -> A.Number (n1 * n2)
+            A.Divide -> if n2 == 0 then throw (RuntimeError "Division by zero.") 
+                        else A.Number (n1 / n2)
+          , env2)
+    A.Binexp4Leaf e' -> evaluateUnexp env e'
 
-evaluateUnexp :: A.Unexp -> A.Lit
-evaluateUnexp e =
+evaluateUnexp :: Env -> A.Unexp -> (A.Lit, Env)
+evaluateUnexp env e =
   case e of 
     A.UnexpNode op e' -> 
-      let lit = evaluateUnexp e' in 
-      case op of
-        A.Neg -> A.Number (- (getNumber "-" lit))
-        A.Not -> A.Boolean (not (isTruthy lit))
-    A.UnexpLeaf e' -> evaluatePrim e'
+      let (v, env') = evaluateUnexp env e' 
+      in (case op of
+            A.Neg -> A.Number (- (getNumber "-" v))
+            A.Not -> A.Boolean (not (isTruthy v))
+          , env')
+    A.UnexpLeaf e' -> evaluatePrim env e'
 
-evaluatePrim :: A.Prim -> A.Lit
-evaluatePrim (A.Literal l) = l
-evaluatePrim (A.Expression e) = evaluateExp e
+evaluatePrim :: Env -> A.Prim -> (A.Lit, Env)
+evaluatePrim env p = 
+  case p of 
+    A.LitPrim l -> (l, env)
+    A.ExpPrim e -> evaluateExp env e
+    A.IdentPrim id -> (env M.! id, env)
 
 getNumber :: String -> A.Lit -> Double
 getNumber op lit =
