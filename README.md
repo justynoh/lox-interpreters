@@ -49,6 +49,7 @@ Statement language
 <blkstmt>  :=   var <lvalue>; | var <lvalue> = <exp>; | <stmt>
 <stmt>     :=   <exp>; | print <exp>; | <block> 
               | if (<exp>) <stmt> | if (<exp>) <stmt> else <stmt>
+              | while (<exp>) <stmt>
 
 <block>    :=   { <blkstmts> }
 <blkstmts> :=   _ | <blkstmt><blkstmts>

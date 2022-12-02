@@ -76,6 +76,7 @@ data Stmt =
   | Block [BlkStmt]
   | ExpStmt Exp 
   | IfElseStmt Exp Stmt (Maybe Stmt)
+  | WhileStmt Exp Stmt
   deriving (Show, Generic)
 
 data BlkStmt = 

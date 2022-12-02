@@ -45,13 +45,21 @@ parseStmt toks =
         (T.LeftParen, _, line'):ts' -> 
           let (e, toks') = parseExp ts' in
           case toks' of 
-            (T.RightParen, _, line''):ts'' -> 
+            (T.RightParen, _, _):ts'' -> 
               let (s1, toks'') = parseStmt ts'' in
               case toks'' of
                 (T.Else, _, _): ts''' -> let (s2, toks''') = parseStmt ts''' in (A.IfElseStmt e s1 (Just s2), toks''')
                 _ -> (A.IfElseStmt e s1 Nothing, toks'')
             _ -> throw (ParseError "Expected ')' after if condition." line')
         _ -> throw (ParseError "Expected '(' after 'if'." line)
+    (T.While, _, line):ts -> 
+      case ts of 
+        (T.LeftParen, _, line'):ts' -> 
+          let (e, toks') = parseExp ts' in
+          case toks' of
+            (T.RightParen, _, _):ts'' -> let (s, toks'') = parseStmt ts'' in (A.WhileStmt e s, toks'')
+            _ -> throw (ParseError "Expected ')' after while loop guard." line')
+        _ -> throw (ParseError "Expected '(' after 'while'." line)
     _ ->
       let (e, toks') = parseExp toks in
       case toks' of

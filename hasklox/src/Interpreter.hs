@@ -5,11 +5,53 @@ import Utils.Error (Error(RuntimeError), throw)
 import Control.DeepSeq (force)
 import Control.Exception (evaluate)
 import qualified Data.Map as M
+import Control.Monad (join)
 
-type Env = M.Map String (Maybe A.Lit)
+-- Env utils
+type EnvScope = M.Map String (Maybe A.Lit)
+type Env = (EnvScope, [EnvScope])
 
 emptyEnv :: Env
-emptyEnv = M.empty
+emptyEnv = (M.empty, [])
+
+declared :: String -> Env -> Bool
+declared k (currentEnv, envStack) = 
+  let find = M.member k in 
+  foldl (\b env -> b || find env) (find currentEnv) envStack
+
+declaredInScope :: String -> Env -> Bool
+declaredInScope k (currentEnv, _) = M.member k currentEnv
+
+declare :: String -> Env -> Env
+declare k (currentEnv, envStack) = (M.insert k Nothing currentEnv, envStack)
+
+declareAndAssign :: String -> A.Lit -> Env -> Env
+declareAndAssign k v (currentEnv, envStack) = (M.insert k (Just v) currentEnv, envStack)
+
+assign :: String -> A.Lit -> Env -> Env
+assign k v (currentEnv, envStack) = 
+  if M.member k currentEnv then (M.insert k (Just v) currentEnv, envStack) else
+  let updateStack envStack = 
+        case envStack of 
+          [] -> error "Interpreter error: failed to update var."
+          env:envs -> if M.member k env then M.insert k (Just v) env:envs else env:updateStack envs
+  in 
+  (currentEnv, updateStack envStack)
+
+lookupValue :: Env -> String -> Maybe A.Lit
+lookupValue (currentEnv, envStack) k = 
+  let find env = join (M.lookup k env) in
+  foldl (\v env -> case v of {Nothing -> find env; _ -> v}) (find currentEnv) envStack
+
+push :: Env -> Env
+push (env, envs) = (M.empty, env:envs)
+
+pop :: Env -> Env
+pop (_, envStack) =
+  case envStack of 
+    [] -> error "Interpreter error: failed to rollback env."
+    env:envs -> (env, envs)
+--
 
 interpret :: Env -> A.Prog -> IO Env
 interpret = interpretProg
@@ -24,20 +66,21 @@ interpretBlkStmt :: Env -> A.BlkStmt -> IO Env
 interpretBlkStmt env s =
   case s of 
     A.Decl id -> 
-      if M.member id env 
-      then throw (RuntimeError ("Variable " ++ id ++ " declared twice.")) 
-      else return (M.insert id Nothing env) -- If no assignment, we opt to initialize with nil.
+      if declaredInScope id env 
+      then throw (RuntimeError ("Variable " ++ id ++ " declared twice within the same scope.")) 
+      else return (declare id env)
     A.DeclAssn id exp -> 
       let (v, env') = evaluateExp env exp in 
-      if M.member id env 
-      then throw (RuntimeError ("Variable " ++ id ++ " declared twice.")) 
-      else return (M.insert id (Just v) env')
+      if declaredInScope id env 
+      then throw (RuntimeError ("Variable " ++ id ++ " declared twice within the same scope.")) 
+      else return (declareAndAssign id v env')
     A.Stmt stmt -> interpretStmt env stmt
 
 interpretStmt :: Env -> A.Stmt -> IO Env
 interpretStmt env s = 
   case s of
-    A.PrintStmt e -> let (v, env') = evaluateExp env e in do  
+    A.PrintStmt e -> 
+      let (v, env') = evaluateExp env e in do  
       putStrLn $ 
         case v of 
           A.Nil -> "nil"
@@ -46,8 +89,13 @@ interpretStmt env s =
           A.String s -> s
       return env'
     A.ExpStmt e -> do (_, env') <- evaluate (force (evaluateExp env e)); return env'
-    A.Block stmts -> do foldl (\e s -> e >>= (`interpretBlkStmt` s)) (return env) stmts; return env -- Ignore the env returned by interpretBlkStmt.
-    A.IfElseStmt e s1 s2 -> let (v, env') = evaluateExp env e in if isTruthy v then interpretStmt env' s1 else maybe (return env') (interpretStmt env') s2
+    A.Block stmts -> do env' <- foldl (\e s -> e >>= (`interpretBlkStmt` s)) (return (push env)) stmts; return (pop env')
+    A.IfElseStmt e s1 s2 -> 
+      let (v, env') = evaluateExp env e in 
+      if isTruthy v then interpretStmt env' s1 else maybe (return env') (interpretStmt env') s2
+    A.WhileStmt e s' ->
+      let (v, env') = evaluateExp env e in
+      if isTruthy v then do env'' <- interpretStmt env' s'; interpretStmt env'' s else return env
 
 evaluateExp :: Env -> A.Exp -> (A.Lit, Env)
 evaluateExp env e = 
@@ -58,8 +106,8 @@ evaluateExp env e =
       in (v, 
           case lval of 
             A.IdentLvalue id -> 
-              if M.member id env'
-              then M.insert id (Just v) env'
+              if declared id env'
+              then assign id v env'
               else throw (RuntimeError ("Undefined variable '" ++ id ++ "'."))
           )
 
@@ -172,8 +220,8 @@ evaluatePrim env p =
     A.LitPrim l -> (l, env)
     A.ExpPrim e -> evaluateExp env e
     A.IdentPrim id -> 
-      if M.member id env 
-      then (case env M.! id of 
+      if declared id env 
+      then (case lookupValue env id of 
               Nothing -> throw (RuntimeError ("Using uninitialized variable '" ++ id ++ "'.")) 
               Just v -> v
             , env) 
