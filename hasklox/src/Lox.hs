@@ -3,6 +3,8 @@ module Lox where
 import qualified System.IO as IO
 
 import Utils.Error (catch)
+import Control.DeepSeq (force)
+import Control.Exception (evaluate)
 import qualified Scanner
 import qualified Parser
 import qualified Interpreter
@@ -35,7 +37,7 @@ run env program = do
   foldl (\_ err -> putStrLn err) (return ()) errs
   if not (null errs) then return env else do
     -- Parsing
-    maybeParsed <- catch (return (Just (Parser.parse labelledTokens))) Nothing
+    maybeParsed <- catch (evaluate (force (Just (Parser.parse labelledTokens)))) Nothing
     case maybeParsed of 
       Nothing -> return env
       -- Interpret

@@ -5,13 +5,13 @@ module Types.Ast where
 import Control.DeepSeq (NFData)
 import GHC.Generics (Generic)
 
-data Unop = Neg | Not deriving Show
-data Binop4 = Times | Divide deriving Show
-data Binop3 = Plus | Minus deriving Show
-data Binop2 = Less | LessEqual | Greater  | GreaterEqual deriving Show
-data Binop1 = Equal | NotEqual deriving Show
+data Unop = Neg | Not deriving (Show, Generic)
+data Binop4 = Times | Divide deriving (Show, Generic)
+data Binop3 = Plus | Minus deriving (Show, Generic)
+data Binop2 = Less | LessEqual | Greater  | GreaterEqual deriving (Show, Generic)
+data Binop1 = Equal | NotEqual deriving (Show, Generic)
 
-data Lvalue = IdentLvalue String deriving Show
+data Lvalue = IdentLvalue String deriving (Show, Generic)
 
 data Lit = 
     Number Double
@@ -20,60 +20,91 @@ data Lit =
   | Nil
   deriving (Show, Generic)
 
--- Needed in order to force evaluation of expression statements.
-instance NFData Lit
-
 data Prim = 
     LitPrim Lit
   | IdentPrim String
   | ExpPrim Exp
-  deriving Show
+  deriving (Show, Generic)
 
 data Unexp =
     UnexpNode Unop Unexp
   | UnexpLeaf Prim
-  deriving Show
+  deriving (Show, Generic)
 
 data Binexp4 =
     Binexp4Node Binexp4 Binop4 Unexp
   | Binexp4Leaf Unexp
-  deriving Show
+  deriving (Show, Generic)
 
 data Binexp3 =
     Binexp3Node Binexp3 Binop3 Binexp4
   | Binexp3Leaf Binexp4
-  deriving Show
+  deriving (Show, Generic)
 
 data Binexp2 = 
     Binexp2Node Binexp2 Binop2 Binexp3
   | Binexp2Leaf Binexp3
-  deriving Show
+  deriving (Show, Generic)
 
 data Binexp1 =
     Binexp1Node Binexp1 Binop1 Binexp2
   | Binexp1Leaf Binexp2
-  deriving Show
+  deriving (Show, Generic)
+
+data Andexp =
+    AndexpNode Andexp Binexp1
+  | AndexpLeaf Binexp1
+  deriving (Show, Generic)
+
+data Orexp = 
+    OrexpNode Orexp Andexp
+  | OrexpLeaf Andexp
+  deriving (Show, Generic)
 
 data Ternexp =
-    TernexpNode Binexp1 Ternexp Ternexp
-  | TernexpLeaf Binexp1
-  deriving Show
+    TernexpNode Orexp Ternexp Ternexp
+  | TernexpLeaf Orexp
+  deriving (Show, Generic)
 
 data Exp = 
     AssnExp Lvalue Exp 
   | PureExp Ternexp 
-  deriving Show
+  deriving (Show, Generic)
 
 data Stmt = 
     PrintStmt Exp 
   | Block [BlkStmt]
   | ExpStmt Exp 
-  deriving Show
+  | IfElseStmt Exp Stmt (Maybe Stmt)
+  deriving (Show, Generic)
 
 data BlkStmt = 
     Decl String 
   | DeclAssn String Exp 
   | Stmt Stmt 
-  deriving Show
+  deriving (Show, Generic)
 
-type Prog = [BlkStmt]
+type Prog = [BlkStmt] 
+
+-- Needed in order to force evaluation.
+instance NFData Unop
+instance NFData Binop4
+instance NFData Binop3
+instance NFData Binop2
+instance NFData Binop1
+
+instance NFData Lvalue
+
+instance NFData Lit
+instance NFData Prim
+instance NFData Unexp
+instance NFData Binexp4
+instance NFData Binexp3
+instance NFData Binexp2
+instance NFData Binexp1
+instance NFData Andexp
+instance NFData Orexp
+instance NFData Ternexp
+instance NFData Exp
+instance NFData Stmt
+instance NFData BlkStmt

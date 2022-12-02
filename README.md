@@ -23,7 +23,9 @@ Expression language
 
 <assnexp>  :=   <lvalue> = <exp>
 
-<ternexp>  :=   <binexp1> ? <ternexp> : <ternexp> | <binexp1>
+<ternexp>  :=   <orexp> ? <ternexp> : <ternexp> | <orexp>
+<orexp>    :=   <orexp> or <andexp> | <andexp>
+<andexp>   :=   <andexp> and <binexp1> | <binexp1>
 <binexp1>  :=   <binexp1> <binop1> <binexp2> | <binexp2>
 <binexp2>  :=   <binexp2> <binop2> <binexp3> | <binexp3>
 <binexp3>  :=   <binexp3> <binop3> <binexp4> | <binexp4>
@@ -45,7 +47,8 @@ Statement language
 ```
 <program>  :=   EOF | <blkstmt> <program>
 <blkstmt>  :=   var <lvalue>; | var <lvalue> = <exp>; | <stmt>
-<stmt>     :=   <exp>; | print <exp>; | <block>
+<stmt>     :=   <exp>; | print <exp>; | <block> 
+              | if (<exp>) <stmt> | if (<exp>) <stmt> else <stmt>
 
 <block>    :=   { <blkstmts> }
 <blkstmts> :=   _ | <blkstmt><blkstmts>

@@ -47,7 +47,8 @@ interpretStmt env s =
       return env'
     A.ExpStmt e -> do (_, env') <- evaluate (force (evaluateExp env e)); return env'
     A.Block stmts -> do foldl (\e s -> e >>= (`interpretBlkStmt` s)) (return env) stmts; return env -- Ignore the env returned by interpretBlkStmt.
- 
+    A.IfElseStmt e s1 s2 -> let (v, env') = evaluateExp env e in if isTruthy v then interpretStmt env' s1 else maybe (return env') (interpretStmt env') s2
+
 evaluateExp :: Env -> A.Exp -> (A.Lit, Env)
 evaluateExp env e = 
   case e of 
@@ -66,9 +67,25 @@ evaluateTernexp :: Env -> A.Ternexp -> (A.Lit, Env)
 evaluateTernexp env e =
   case e of 
     A.TernexpNode e0 e1 e2 -> 
-      let (v0 , env0) = evaluateBinexp1 env e0 in 
+      let (v0 , env0) = evaluateOrexp env e0 in 
       evaluateTernexp env0 (if isTruthy v0 then e1 else e2)
-    A.TernexpLeaf e' -> evaluateBinexp1 env e'
+    A.TernexpLeaf e' -> evaluateOrexp env e'
+
+evaluateOrexp :: Env -> A.Orexp -> (A.Lit, Env)
+evaluateOrexp env e =
+  case e of 
+    A.OrexpNode e1 e2 -> 
+      let (v1, env1) = evaluateOrexp env e1 in 
+      if isTruthy v1 then (v1, env1) else evaluateAndexp env1 e2
+    A.OrexpLeaf e' -> evaluateAndexp env e'
+
+evaluateAndexp :: Env -> A.Andexp -> (A.Lit, Env)
+evaluateAndexp env e =
+  case e of 
+    A.AndexpNode e1 e2 -> 
+      let (v1, env1) = evaluateAndexp env e1 in
+      if not (isTruthy v1) then (v1, env1) else evaluateBinexp1 env1 e2
+    A.AndexpLeaf e' -> evaluateBinexp1 env e'
 
 evaluateBinexp1 :: Env -> A.Binexp1 -> (A.Lit, Env)
 evaluateBinexp1 env e =

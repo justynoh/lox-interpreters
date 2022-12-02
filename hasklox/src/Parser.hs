@@ -40,6 +40,18 @@ parseStmt toks =
         (T.Semicolon, _, _):ts' -> (A.PrintStmt e, ts')
         _ -> throw (ParseError "Expected ';' after print expression." line)
     (T.LeftBrace, _, line):ts -> let (block, toks') = parseBlock ts in (A.Block block, toks')
+    (T.If, _, line):ts ->
+      case ts of 
+        (T.LeftParen, _, line'):ts' -> 
+          let (e, toks') = parseExp ts' in
+          case toks' of 
+            (T.RightParen, _, line''):ts'' -> 
+              let (s1, toks'') = parseStmt ts'' in
+              case toks'' of
+                (T.Else, _, _): ts''' -> let (s2, toks''') = parseStmt ts''' in (A.IfElseStmt e s1 (Just s2), toks''')
+                _ -> (A.IfElseStmt e s1 Nothing, toks'')
+            _ -> throw (ParseError "Expected ')' after if condition." line')
+        _ -> throw (ParseError "Expected '(' after 'if'." line)
     _ ->
       let (e, toks') = parseExp toks in
       case toks' of
@@ -65,7 +77,7 @@ parseExp toks =
 
 parseTernexp :: T.LabelledTokens -> (A.Ternexp, T.LabelledTokens)
 parseTernexp toks = 
-  let (e0, toks') = parseBinexp1 Nothing toks in
+  let (e0, toks') = parseOrexp Nothing toks in
   case toks' of
     (T.Question, _, line):ts ->
       let (e1, toks'') = parseTernexp ts in
@@ -76,67 +88,65 @@ parseTernexp toks =
         _ -> throw (ParseError "Expected ':' after '?'." line)
     _ -> (A.TernexpLeaf e0, toks')
   
+parseOrexp :: Maybe A.Orexp -> T.LabelledTokens -> (A.Orexp, T.LabelledTokens)
+parseOrexp prev toks = 
+  let (e1, toks') = parseAndexp Nothing toks
+      currexp = maybe (A.OrexpLeaf e1) (`A.OrexpNode` e1) prev
+      loop = parseOrexp (Just currexp) 
+  in  case toks' of
+        (T.Or, _, _):ts -> loop ts
+        _ -> (currexp, toks')
+
+parseAndexp :: Maybe A.Andexp -> T.LabelledTokens -> (A.Andexp, T.LabelledTokens)
+parseAndexp prev toks = 
+  let (e1, toks') = parseBinexp1 Nothing toks
+      currexp = maybe (A.AndexpLeaf e1) (`A.AndexpNode` e1) prev
+      loop = parseAndexp (Just currexp) 
+  in  case toks' of
+        (T.And, _, _):ts -> loop ts
+        _ -> (currexp, toks')
+
 parseBinexp1 :: Maybe (A.Binexp1, A.Binop1) -> T.LabelledTokens -> (A.Binexp1, T.LabelledTokens)
 parseBinexp1 prev toks = 
-  let (e1, toks') = parseBinexp2 Nothing toks in
-  case toks' of
-    [] -> maybe (A.Binexp1Leaf e1, []) (\(e0, op) -> (A.Binexp1Node e0 op e1, [])) prev 
-    (t, _, _):ts ->
-      let 
-        currexp = maybe (A.Binexp1Leaf e1) (\(e0, op) -> A.Binexp1Node e0 op e1) prev
-        loop op = parseBinexp1 (Just (currexp, op)) ts 
-      in
-        case t of 
-          T.BangEqual -> loop A.NotEqual
-          T.EqualEqual -> loop A.Equal
-          _ -> (currexp, toks')
+  let (e1, toks') = parseBinexp2 Nothing toks 
+      currexp = maybe (A.Binexp1Leaf e1) (\(e0, op) -> A.Binexp1Node e0 op e1) prev
+      loop op = parseBinexp1 (Just (currexp, op))
+  in  case toks' of
+        (T.BangEqual, _, _):ts -> loop A.NotEqual ts
+        (T.EqualEqual, _, _):ts -> loop A.Equal ts
+        _ -> (currexp, toks')
 
 parseBinexp2 :: Maybe (A.Binexp2, A.Binop2) -> T.LabelledTokens -> (A.Binexp2, T.LabelledTokens)
 parseBinexp2 prev toks = 
-  let (e1, toks') = parseBinexp3 Nothing toks in
-  case toks' of
-    [] -> maybe (A.Binexp2Leaf e1, []) (\(e0, op) -> (A.Binexp2Node e0 op e1, [])) prev 
-    (t, _, _):ts ->
-      let 
-        currexp = maybe (A.Binexp2Leaf e1) (\(e0, op) -> A.Binexp2Node e0 op e1) prev
-        loop op = parseBinexp2 (Just (currexp, op)) ts 
-      in
-        case t of 
-          T.Less -> loop A.Less
-          T.LessEqual -> loop A.LessEqual
-          T.Greater -> loop A.Greater
-          T.GreaterEqual -> loop A.GreaterEqual
-          _ -> (currexp, toks')
+  let (e1, toks') = parseBinexp3 Nothing toks 
+      currexp = maybe (A.Binexp2Leaf e1) (\(e0, op) -> A.Binexp2Node e0 op e1) prev
+      loop op = parseBinexp2 (Just (currexp, op)) 
+  in  case toks' of
+        (T.Less, _, _):ts -> loop A.Less ts
+        (T.LessEqual, _, _):ts -> loop A.LessEqual ts
+        (T.Greater, _, _):ts -> loop A.Greater ts 
+        (T.GreaterEqual, _, _):ts -> loop A.GreaterEqual ts
+        _ -> (currexp, toks')
 
 parseBinexp3 :: Maybe (A.Binexp3, A.Binop3) -> T.LabelledTokens -> (A.Binexp3, T.LabelledTokens)
 parseBinexp3 prev toks = 
-  let (e1, toks') = parseBinexp4 Nothing toks in
-  case toks' of
-    [] -> maybe (A.Binexp3Leaf e1, []) (\(e0, op) -> (A.Binexp3Node e0 op e1, [])) prev 
-    (t, _, _):ts ->
-      let 
-        currexp = maybe (A.Binexp3Leaf e1) (\(e0, op) -> A.Binexp3Node e0 op e1) prev
-        loop op = parseBinexp3 (Just (currexp, op)) ts 
-      in
-        case t of 
-          T.Plus -> loop A.Plus
-          T.Minus -> loop A.Minus
-          _ -> (currexp, toks')
+  let (e1, toks') = parseBinexp4 Nothing toks 
+      currexp = maybe (A.Binexp3Leaf e1) (\(e0, op) -> A.Binexp3Node e0 op e1) prev
+      loop op = parseBinexp3 (Just (currexp, op)) 
+  in  case toks' of
+        (T.Plus, _, _):ts -> loop A.Plus ts
+        (T.Minus, _, _):ts -> loop A.Minus ts
+        _ -> (currexp, toks')
 
 parseBinexp4 :: Maybe (A.Binexp4, A.Binop4) -> T.LabelledTokens -> (A.Binexp4, T.LabelledTokens)
 parseBinexp4 prev toks = 
-  let (e1, toks') = parseUnexp toks in
-  case toks' of
-    [] -> maybe (A.Binexp4Leaf e1, []) (\(e0, op) -> (A.Binexp4Node e0 op e1, [])) prev 
-    (t, _, _):ts ->
-      let 
-        currexp = maybe (A.Binexp4Leaf e1) (\(e0, op) -> A.Binexp4Node e0 op e1) prev
-        loop op = parseBinexp4 (Just (currexp, op)) ts 
-      in
-        case t of 
-          T.Star -> loop A.Times
-          T.Slash -> loop A.Divide
-          _ -> (currexp, toks')
+  let (e1, toks') = parseUnexp toks
+      currexp = maybe (A.Binexp4Leaf e1) (\(e0, op) -> A.Binexp4Node e0 op e1) prev
+      loop op = parseBinexp4 (Just (currexp, op)) 
+  in case toks' of
+      (T.Star, _, _):ts -> loop A.Times ts
+      (T.Slash, _, _):ts -> loop A.Divide ts 
+      _ -> (currexp, toks')
 
 parseUnexp :: T.LabelledTokens -> (A.Unexp, T.LabelledTokens)
 parseUnexp toks =
@@ -187,5 +197,5 @@ synchronize toks =
 ternexpToLvalue :: A.Ternexp -> Int -> A.Lvalue
 ternexpToLvalue e line = 
   case e of
-    A.TernexpLeaf (A.Binexp1Leaf (A.Binexp2Leaf (A.Binexp3Leaf (A.Binexp4Leaf (A.UnexpLeaf (A.IdentPrim s)))))) -> A.IdentLvalue s
+    A.TernexpLeaf (A.OrexpLeaf (A.AndexpLeaf (A.Binexp1Leaf (A.Binexp2Leaf (A.Binexp3Leaf (A.Binexp4Leaf (A.UnexpLeaf (A.IdentPrim s)))))))) -> A.IdentLvalue s
     _ -> throw (ParseError "Invalid assignment target on left side of '='." line)
