@@ -79,9 +79,13 @@ data Stmt =
   | WhileStmt Exp Stmt
   deriving (Show, Generic)
 
-data BlkStmt = 
+data DeclStmt =
     Decl String 
-  | DeclAssn String Exp 
+  | DeclAssn String Exp
+  deriving (Show, Generic)
+
+data BlkStmt = 
+    DeclStmt DeclStmt
   | Stmt Stmt 
   deriving (Show, Generic)
 
@@ -108,4 +112,5 @@ instance NFData Orexp
 instance NFData Ternexp
 instance NFData Exp
 instance NFData Stmt
+instance NFData DeclStmt
 instance NFData BlkStmt

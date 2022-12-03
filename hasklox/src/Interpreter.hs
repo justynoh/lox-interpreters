@@ -65,16 +65,15 @@ interpretProg env p =
 interpretBlkStmt :: Env -> A.BlkStmt -> IO Env
 interpretBlkStmt env s =
   case s of 
-    A.Decl id -> 
-      if declaredInScope id env 
-      then throw (RuntimeError ("Variable " ++ id ++ " declared twice within the same scope.")) 
-      else return (declare id env)
-    A.DeclAssn id exp -> 
-      let (v, env') = evaluateExp env exp in 
-      if declaredInScope id env 
-      then throw (RuntimeError ("Variable " ++ id ++ " declared twice within the same scope.")) 
-      else return (declareAndAssign id v env')
-    A.Stmt stmt -> interpretStmt env stmt
+    A.DeclStmt s' -> interpretDeclStmt env s'
+    A.Stmt s' -> interpretStmt env s'
+
+interpretDeclStmt :: Env -> A.DeclStmt -> IO Env
+interpretDeclStmt env s =
+  let (id, e) = case s of { A.Decl id -> (id, Nothing); A.DeclAssn id e -> (id, Just (evaluateExp env e)) } in
+  if declaredInScope id env 
+  then throw (RuntimeError ("Variable " ++ id ++ " declared twice within the same scope.")) 
+  else return (case e of { Nothing -> declare id env; Just (v, env') -> declareAndAssign id v env' })
 
 interpretStmt :: Env -> A.Stmt -> IO Env
 interpretStmt env s = 

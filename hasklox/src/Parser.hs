@@ -3,6 +3,7 @@ module Parser where
 import qualified Types.Token as T
 import qualified Types.Ast as A
 import Utils.Error (Error(ParseError), throw)
+import Data.Maybe (fromMaybe)
 
 parse :: T.LabelledTokens -> A.Prog
 parse = parseProg
@@ -14,22 +15,28 @@ parseProg toks =
     _ -> let (s, toks') = parseBlkStmt toks in s : parseProg toks'
 
 parseBlkStmt :: T.LabelledTokens -> (A.BlkStmt, T.LabelledTokens)
-parseBlkStmt toks =
+parseBlkStmt toks = -- Does not actually consume any tokens. Only peek and delegate.
   case toks of 
-    (T.Var, _, line):ts -> 
-      case ts of
-        (T.Identifier ident, _, line'):ts' ->
-          case ts' of
-            (T.Semicolon, _, _):ts'' -> (A.Decl ident, ts'') -- Declare only
-            (T.Equal, _, line''):ts'' -> -- Declare and assign
-              let (exp, toks') = parseExp ts'' in
-              case toks' of 
-                (T.Semicolon, _, _):ts''' -> (A.DeclAssn ident exp, ts''')
-                _ -> throw (ParseError "Expected ';' after variable assignment." line'')
-            _ -> throw (ParseError "Expected ';' or '=' after variable declaration." line')
-        _ -> throw (ParseError "Expected identified after 'var'." line)
+    (T.Var, _, _):_ -> let (d, toks') = parseDeclStmt toks in (A.DeclStmt d, toks')
     _ -> let (stmt, toks') = parseStmt toks in (A.Stmt stmt, toks')
 
+-- Precondition: toks[0] = T.Var
+parseDeclStmt :: T.LabelledTokens -> (A.DeclStmt, T.LabelledTokens)
+parseDeclStmt toks = 
+  case toks of 
+  (T.Var, _, line):ts -> 
+    case ts of
+      (T.Identifier ident, _, line'):ts' ->
+        case ts' of
+          (T.Semicolon, _, _):ts'' -> (A.Decl ident, ts'') -- Declare only
+          (T.Equal, _, line''):ts'' -> -- Declare and assign
+            let (exp, toks') = parseExp ts'' in
+            case toks' of 
+              (T.Semicolon, _, _):ts''' -> (A.DeclAssn ident exp, ts''')
+              _ -> throw (ParseError "Expected ';' after variable assignment." line'')
+          _ -> throw (ParseError "Expected ';' or '=' after variable declaration." line')
+      _ -> throw (ParseError "Expected identified after 'var'." line)
+  _ -> error "Parser error: called parseDeclStmt without 'var'."
 
 parseStmt :: T.LabelledTokens -> (A.Stmt, T.LabelledTokens)
 parseStmt toks =
@@ -60,11 +67,58 @@ parseStmt toks =
             (T.RightParen, _, _):ts'' -> let (s, toks'') = parseStmt ts'' in (A.WhileStmt e s, toks'')
             _ -> throw (ParseError "Expected ')' after while loop guard." line')
         _ -> throw (ParseError "Expected '(' after 'while'." line)
+    (T.For, _, line):ts -> -- Desugar 'for's into 'while's
+      case ts of
+        (T.LeftParen, _, _):ts' ->
+          -- Match
+          let (init, toks') = 
+                case ts' of
+                  (T.Semicolon, _, _):ts'' -> (Nothing, ts'')
+                  (T.Var, _, _):_ -> let (d, toks') = parseDeclStmt ts' in (Just (A.DeclStmt d), toks')
+                  _ -> let (e, toks') = parseExp ts' in 
+                    case toks' of 
+                      (T.Semicolon, _, _):ts'' -> (Just (A.Stmt (A.ExpStmt e)), ts'')
+                      (_, _, line'):_ -> throw (ParseError "Expected ';' after for loop initialization expression." line')
+                      [] -> throw (ParseError "EOF while scanning loop initialization expression." 0)
+              (guard, toks'') = 
+                case toks' of
+                  (T.Semicolon, _, line'):ts'' -> (Nothing, ts'')
+                  _ -> let (e, toks'') = parseExp toks' in
+                    case toks'' of 
+                      (T.Semicolon, _, _):ts''' -> (Just e, ts''')
+                      (_, _, line'):_ -> throw (ParseError "Expected ';' after for loop guard expression." line')
+                      [] -> throw (ParseError "EOF while scanning loop guard expression." 0)
+
+              (incr, toks''') = 
+                case toks'' of
+                  (T.RightParen, _, line''):ts''' -> (Nothing, ts''')
+                  _ -> let (e, toks''') = parseExp toks'' in
+                    case toks''' of 
+                      (T.RightParen, _, _):ts'''' -> (Just (A.Stmt (A.ExpStmt e)), ts'''')
+                      (_, _, line'):_ -> throw (ParseError "Expected ')' after for loop increment expression." line')
+                      [] -> throw (ParseError "EOF while scanning loop increment expression." 0)
+              (stmt, toks'''') = parseStmt toks'''
+              -- Build desugared form
+              body = 
+                maybe 
+                  stmt
+                  (\incrStmt -> 
+                    case stmt of
+                      A.Block ss -> A.Block (ss ++ [incrStmt])
+                      s -> A.Block [A.Stmt s, incrStmt]) 
+                  incr
+              while = 
+                A.WhileStmt 
+                  (fromMaybe (A.PureExp (A.TernexpLeaf (A.OrexpLeaf (A.AndexpLeaf (A.Binexp1Leaf (A.Binexp2Leaf (A.Binexp3Leaf (A.Binexp4Leaf (A.UnexpLeaf (A.LitPrim (A.Boolean True))))))))))) guard) 
+                  body
+          in (maybe while (\initStmt -> A.Block [initStmt, A.Stmt while]) init, toks'''')
+        _ -> throw (ParseError "Expected '(' after 'for'." line)
     _ ->
       let (e, toks') = parseExp toks in
       case toks' of
         (T.Semicolon, _, _):ts' -> (A.ExpStmt e, ts')
-        _ -> throw (ParseError "Expected ';' after expression statement." 0) -- TODO: Update line number later
+        (_, _, line):_ -> throw (ParseError "Expected ';' after expression statement." line)
+        [] -> throw (ParseError "EOF while scanning expression." 0)
 
 parseBlock :: T.LabelledTokens -> ([A.BlkStmt], T.LabelledTokens)
 parseBlock toks =

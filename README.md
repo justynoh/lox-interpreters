@@ -46,10 +46,13 @@ Expression language
 Statement language
 ```
 <program>  :=   EOF | <blkstmt> <program>
-<blkstmt>  :=   var <lvalue>; | var <lvalue> = <exp>; | <stmt>
+<blkstmt>  :=   <declexp> | <stmt>
+<declstmt> :=   var <lvalue>; | var <lvalue> = <exp>;
 <stmt>     :=   <exp>; | print <exp>; | <block> 
               | if (<exp>) <stmt> | if (<exp>) <stmt> else <stmt>
-              | while (<exp>) <stmt>
+              | while (<exp>) <stmt> | for (<forinit> <expopt> ; <expopt> ) <stmt>
+<forinit>  :=   <varstmt> | <exp>; | ;
+<expopt>   :=   <exp> | _
 
 <block>    :=   { <blkstmts> }
 <blkstmts> :=   _ | <blkstmt><blkstmts>
