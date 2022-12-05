@@ -26,9 +26,6 @@ runFile path = do
   error <- run Interpreter.emptyEnv contents
   return () -- hmmm...
 
-quitIf :: Bool -> Int -> IO Int -> IO Int
-quitIf b n cont = if b then return n else cont
-
 run :: Interpreter.Env -> String -> IO Interpreter.Env
 run env program = do
   -- Scanning

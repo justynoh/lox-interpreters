@@ -134,7 +134,9 @@ keywordMap :: String -> T.Token
 keywordMap s =
   case s of 
     "and" -> T.And
+    "break" -> T.Break
     "class" -> T.Class
+    "continue" -> T.Continue
     "else" -> T.Else
     "false" -> T.False 
     "for" -> T.For

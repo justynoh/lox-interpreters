@@ -1,11 +1,17 @@
+{-# LANGUAGE LambdaCase #-}
 module Interpreter where
 
 import qualified Types.Ast as A  
 import Utils.Error (Error(RuntimeError), throw)
 import Control.DeepSeq (force)
 import Control.Exception (evaluate)
+import qualified Control.Exception as E
 import qualified Data.Map as M
 import Control.Monad (join)
+
+data Jump = BreakJump Env | ContinueJump Env deriving Show
+
+instance E.Exception Jump
 
 -- Env utils
 type EnvScope = M.Map String (Maybe A.Lit)
@@ -54,7 +60,12 @@ pop (_, envStack) =
 --
 
 interpret :: Env -> A.Prog -> IO Env
-interpret = interpretProg
+interpret env prog = E.catch (interpretProg env prog) (\e -> 
+  -- Rethrow at the top level with the util constructors.
+  case e of
+    BreakJump _ -> throw (RuntimeError "Loop context enclosing 'break' not found.")
+    ContinueJump _ -> throw (RuntimeError "Loop context enclosing 'continue' not found.")
+  )
 
 interpretProg :: Env -> A.Prog -> IO Env
 interpretProg env p = 
@@ -93,8 +104,40 @@ interpretStmt env s =
       let (v, env') = evaluateExp env e in 
       if isTruthy v then interpretStmt env' s1 else maybe (return env') (interpretStmt env') s2
     A.WhileStmt e s' ->
-      let (v, env') = evaluateExp env e in
-      if isTruthy v then do env'' <- interpretStmt env' s'; interpretStmt env'' s else return env
+      let loop env = 
+            let (v, env') = evaluateExp env e in
+            if isTruthy v then 
+              E.catch 
+                (do
+                  env'' <- E.catch (interpretStmt env' s') (\case 
+                    ContinueJump env''' -> return env'''
+                    e -> E.throw e)
+                  loop env'')
+                (\case 
+                  BreakJump env''' -> return env'''
+                  e -> E.throw e)
+            else return env
+      in loop env
+    A.ForStmt s1 e2 e3 s' -> 
+      let loop env = 
+            let (v, env') = evaluateExp env e2 in
+            if isTruthy v then 
+              E.catch 
+                (do
+                  env'' <- E.catch (interpretStmt env' s') (\case 
+                    ContinueJump env''' -> return env'''
+                    e -> E.throw e)
+                  loop (maybe env'' (snd . evaluateExp env'') e3))
+                (\case 
+                  BreakJump env''' -> return env'''
+                  e -> E.throw e)
+            else return env 
+      in do 
+        env' <- maybe (return env) (interpretBlkStmt env) s1
+        loop env'
+    -- Handle break and continue with exceptional control flow. Directly throw the 'not found' error, as it will be caught by the nearest loop.
+    A.BreakStmt -> E.throw (BreakJump env)
+    A.ContinueStmt -> E.throw (ContinueJump env)
 
 evaluateExp :: Env -> A.Exp -> (A.Lit, Env)
 evaluateExp env e = 
@@ -225,6 +268,8 @@ evaluatePrim env p =
               Just v -> v
             , env) 
       else throw (RuntimeError ("Using undeclared variable '" ++ id ++ "'."))
+
+-- Helpers
 
 getNumber :: String -> A.Lit -> Double
 getNumber op lit =

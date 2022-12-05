@@ -30,7 +30,9 @@ data Token =
   | Number Double
   -- Keywords
   | And 
-  | Class 
+  | Break
+  | Class
+  | Continue
   | Else
   | False 
   | Fun

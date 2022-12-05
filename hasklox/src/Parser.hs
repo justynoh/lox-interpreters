@@ -67,10 +67,9 @@ parseStmt toks =
             (T.RightParen, _, _):ts'' -> let (s, toks'') = parseStmt ts'' in (A.WhileStmt e s, toks'')
             _ -> throw (ParseError "Expected ')' after while loop guard." line')
         _ -> throw (ParseError "Expected '(' after 'while'." line)
-    (T.For, _, line):ts -> -- Desugar 'for's into 'while's
+    (T.For, _, line):ts -> 
       case ts of
         (T.LeftParen, _, _):ts' ->
-          -- Match
           let (init, toks') = 
                 case ts' of
                   (T.Semicolon, _, _):ts'' -> (Nothing, ts'')
@@ -94,25 +93,27 @@ parseStmt toks =
                   (T.RightParen, _, line''):ts''' -> (Nothing, ts''')
                   _ -> let (e, toks''') = parseExp toks'' in
                     case toks''' of 
-                      (T.RightParen, _, _):ts'''' -> (Just (A.Stmt (A.ExpStmt e)), ts'''')
+                      (T.RightParen, _, _):ts'''' -> (Just e, ts'''')
                       (_, _, line'):_ -> throw (ParseError "Expected ')' after for loop increment expression." line')
                       [] -> throw (ParseError "EOF while scanning loop increment expression." 0)
               (stmt, toks'''') = parseStmt toks'''
-              -- Build desugared form
-              body = 
-                maybe 
-                  stmt
-                  (\incrStmt -> 
-                    case stmt of
-                      A.Block ss -> A.Block (ss ++ [incrStmt])
-                      s -> A.Block [A.Stmt s, incrStmt]) 
-                  incr
-              while = 
-                A.WhileStmt 
-                  (fromMaybe (A.PureExp (A.TernexpLeaf (A.OrexpLeaf (A.AndexpLeaf (A.Binexp1Leaf (A.Binexp2Leaf (A.Binexp3Leaf (A.Binexp4Leaf (A.UnexpLeaf (A.LitPrim (A.Boolean True))))))))))) guard) 
-                  body
-          in (maybe while (\initStmt -> A.Block [initStmt, A.Stmt while]) init, toks'''')
+          in (A.ForStmt 
+                init 
+                (fromMaybe -- If no guard is provided, default to true.
+                  (A.PureExp (A.TernexpLeaf (A.OrexpLeaf (A.AndexpLeaf (A.Binexp1Leaf (A.Binexp2Leaf (A.Binexp3Leaf (A.Binexp4Leaf (A.UnexpLeaf (A.LitPrim (A.Boolean True))))))))))) 
+                  guard) 
+                incr 
+                stmt, 
+              toks'''')
         _ -> throw (ParseError "Expected '(' after 'for'." line)
+    (T.Break, _, line):ts -> 
+      case ts of 
+        (T.Semicolon, _, _): ts' -> (A.BreakStmt, ts')
+        _ -> throw (ParseError "Expected ';' after 'break'." line)
+    (T.Continue, _, line):ts ->
+      case ts of 
+        (T.Semicolon, _, _): ts' -> (A.ContinueStmt, ts')
+        _ -> throw (ParseError "Expected ';' after 'continue'." line)
     _ ->
       let (e, toks') = parseExp toks in
       case toks' of

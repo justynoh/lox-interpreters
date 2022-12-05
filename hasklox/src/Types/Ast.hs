@@ -77,6 +77,9 @@ data Stmt =
   | ExpStmt Exp 
   | IfElseStmt Exp Stmt (Maybe Stmt)
   | WhileStmt Exp Stmt
+  | ForStmt (Maybe BlkStmt) Exp (Maybe Exp) Stmt
+  | BreakStmt
+  | ContinueStmt
   deriving (Show, Generic)
 
 data DeclStmt =
